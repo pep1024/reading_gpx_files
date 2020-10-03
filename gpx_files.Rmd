@@ -1,0 +1,13 @@
+---
+title: "Read GPX files from Wikiloc and other GSP software"
+author: "Pep Porrà"
+date: "2020-10-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Goal
+
