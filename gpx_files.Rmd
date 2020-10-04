@@ -33,8 +33,10 @@ library(XML)
 ```{r}
 file_name = "data/wikiloc/montcau-i-la-mola-des-del-coll-d-estenalles.gpx"
 # external pointer is used
-doc = htmlTreeParse(file = file_name, useInternalNodes = T)
+doc = htmlTreeParse(file = file_name, useInternalNodes = T, encoding = "UTF-8")
 ```
+
+The parameter encoding is important if character values are not all in English.
 
 ```{r}
 root_point = xmlRoot(doc)
@@ -43,6 +45,7 @@ root_point = xmlRoot(doc)
 ```{r}
 str(root_point)
 ```
+
 Number of children
 
 ```{r}
@@ -175,12 +178,11 @@ wpt_df$lon = as.numeric(coordinates[, "lon"])
 
 In order to get the name, we need get the children for each node wpt and get the value of the node name. There is a function to run this loop over all nodes identified by a given XPath. In our case, the XPath reads "/html/body/gpx/wpt/name" (note that "//name" could also be used in no other name node exists in nodes different than wpt)
 
-
-TBD: be sure characters are read with the right encoding
-
 ```{r}
 xpathSApply(doc, path = "/html/body/gpx/wpt/name", xmlValue)
 ```
+In order to be sure that the accents are not translated well, it is important to include encoding = "UTF-8" parameter in `htmlTreeParse`
+
 ```{r}
 wpt_df$name = xpathSApply(doc, path = "/html/body/gpx/wpt/name", xmlValue)
 ```
