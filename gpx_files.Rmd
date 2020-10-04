@@ -11,3 +11,359 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Goal
 
+To read file with .gpx extension from GPS software like wikiloc, Strava, Samsung Health and others.
+
+## GPX files
+
+GPX, or GPS exchange format is an XML schema designed as a common GPS data format for software applications [wikipedia](https://en.wikipedia.org/wiki/GPS_Exchange_Format).
+
+Many geocomputation packages in R can read .gpx files: [Gecomputation in R](https://geocompr.robinlovelace.net/). For instance, the package **sf**. Nevertheless, part of the metadata could be missing in some cases. For this reason, I prefer to read GPX files directly as XML objects
+
+## XML package
+
+Again, many packges can read xml and help to parse it in R. I picked **XML** [CRAN](https://CRAN.R-project.org/package=XML) and learned to it using [Gaston Sanchez notes](http://www.cse.chalmers.se/~chrdimi/downloads/web/getting_web_data_r4_parsing_xml_html.pdf).
+
+```{r}
+#install.packages("XML")
+library(XML)
+```
+
+## Data from wikiloc
+
+```{r}
+file_name = "data/wikiloc/montcau-i-la-mola-des-del-coll-d-estenalles.gpx"
+# external pointer is used
+doc = htmlTreeParse(file = file_name, useInternalNodes = T)
+```
+
+```{r}
+root_point = xmlRoot(doc)
+```
+
+```{r}
+str(root_point)
+```
+Number of children
+
+```{r}
+xmlSize(root_point)
+```
+Name of the root node. WE will use to identify individual nodes in XPath
+
+```{r}
+xmlName(root_point)
+```
+```{r}
+xmlAttrs(root_point)
+```
+Therefore, XPath will start with "/html". Identify the name of the children
+
+```{r}
+names(root_point)
+```
+
+```{r}
+first_point = xmlChildren(root_point)
+```
+
+```{r}
+xmlSize(first_point)
+```
+```{r}
+xmlName(first_point[[1]])
+```
+we need [[1]] because `xmlChildren` returns a list. This equivalent to 
+
+```{r}
+xmlName(first_point$body)
+```
+
+```{r}
+str(first_point$body)
+```
+Xpath will be now "/html/body". Next node reads
+
+
+```{r}
+second_point = xmlChildren(first_point$body)
+```
+
+```{r}
+xmlSize(second_point)
+```
+```{r}
+xmlName(second_point[[1]])
+```
+```{r}
+xmlAttrs(second_point$gpx)
+```
+Node (XPath = "/html/body/gpx") has 5 attributes
+
+```{r}
+xmlGetAttr(second_point$gpx, "creator")
+```
+Number of children
+
+```{r}
+xmlSize(second_point$gpx)
+```
+
+```{r}
+third_point = xmlChildren(second_point$gpx)
+```
+
+With `names`, we identify the all children nodes
+
+```{r}
+names(third_point)
+```
+So, there 1 of names metadata, 7 of name wpt (way-point) and 1 of name trk. We can also know the number of nodes in each of the 9 nodes using sapply (or lapply) to iterate the nodes and apply a function to each subnode
+
+```{r}
+sapply(third_point, xmlSize)
+```
+Remember that the XPath to reach the third_point node is "/html/body/gpx"
+We use XPath to navigate the document and obtain a list of all elements of a node
+
+```{r}
+node = getNodeSet(doc, "/html/body/gpx")
+children = xmlChildren(node[[1]])
+str(children)
+```
+
+```{r}
+identical(third_point, children)
+```
+### Metadata
+
+```{r}
+node = getNodeSet(doc, "/html/body/gpx/metadata")
+xmlSize(node)
+node[[1]]
+```
+
+### Way-points
+
+```{r}
+wpt_node = getNodeSet(doc, "/html/body/gpx/wpt")
+xmlSize(wpt_node)
+```
+Size of each subnode
+
+```{r}
+sapply(wpt_node, xmlSize)
+```
+```{r}
+wpt_node[[1]]
+```
+```{r}
+xmlAttrs(wpt_node[[1]])
+```
+We can create a data frame with the way-points: name and coordinates
+
+```{r}
+n_elements = xmlSize(wpt_node)
+wpt_df <- data.frame(
+  name = character(n_elements), lat = numeric(n_elements), lon = numeric(n_elements))
+```
+
+```{r}
+coordinates = t(sapply(wpt_node, xmlAttrs))
+wpt_df$lat = as.numeric(coordinates[, "lat"])
+wpt_df$lon = as.numeric(coordinates[, "lon"])
+```
+
+In order to get the name, we need get the children for each node wpt and get the value of the node name. There is a function to run this loop over all nodes identified by a given XPath. In our case, the XPath reads "/html/body/gpx/wpt/name" (note that "//name" could also be used in no other name node exists in nodes different than wpt)
+
+
+TBD: be sure characters are read with the right encoding
+
+```{r}
+xpathSApply(doc, path = "/html/body/gpx/wpt/name", xmlValue)
+```
+```{r}
+wpt_df$name = xpathSApply(doc, path = "/html/body/gpx/wpt/name", xmlValue)
+```
+
+### Track points
+
+```{r}
+track_node = getNodeSet(doc, "/html/body/gpx/trk/trkseg/trkpt")
+xmlSize(track_node)
+```
+```{r}
+track_node[[1]]
+```
+
+We can see latitude and longitude are attributes while elevation and time are subnodes
+
+```{r}
+times <- xpathSApply(doc, path = "/html/body/gpx/trk/trkseg/trkpt/time", xmlValue)
+elevations <- as.numeric(xpathSApply(doc, path = "/html/body/gpx/trk/trkseg/trkpt/ele", xmlValue))
+```
+
+```{r}
+coords <- xpathSApply(doc, path = "//trkpt", xmlAttrs)
+```
+
+```{r}
+n_elements = xmlSize(track_node)
+track_df <- data.frame(
+  elevation = elevations, time = times,
+  lat = as.numeric(coords["lat",]),
+  lon = as.numeric(coords["lon",]))
+```
+
+Therefore, we have been able to read all details in a wikiloc .gpx file and import them into different data frames.
+
+## Data from Strava
+
+```{r}
+file_name = "data/strava/sant_ignasi_turo_de_monts_tibidabo_coll_de_la_vinassa_la_pinya_2_vallvidrera_santa_maria_de_jerusalem.gpx"
+# external pointer is used
+doc = htmlTreeParse(file = file_name, useInternalNodes = T)
+```
+
+First three nodes are the same: "/html/body/gpx
+
+```{r}
+node = getNodeSet(doc, "/html/body/gpx")
+gpx_info = xmlChildren(node[[1]])
+str(gpx_info)
+```
+### Metadata
+
+```{r}
+xmlChildren(gpx_info$metadata)
+```
+Only time is included
+
+### Track points
+
+```{r}
+track_node = getNodeSet(doc, "/html/body/gpx/trk/trkseg/trkpt")
+xmlSize(track_node)
+```
+```{r}
+track_node[[1]]
+```
+
+We can see latitude and longitude are attributes while elevation and time are subnodes. there is also information about cadence
+
+
+```{r}
+times <- xpathSApply(doc, path = "/html/body/gpx/trk/trkseg/trkpt/time", xmlValue)
+elevations <- as.numeric(xpathSApply(doc, path = "/html/body/gpx/trk/trkseg/trkpt/ele", xmlValue))
+```
+
+```{r}
+coords <- xpathSApply(doc, path = "//trkpt", xmlAttrs)
+```
+
+```{r}
+track_df <- data.frame(
+  elevation = elevations, time = times,
+  lat = as.numeric(coords["lat",]),
+  lon = as.numeric(coords["lon",]))
+```
+
+## Data from Instamaps
+
+[Instamaps](https://www.instamaps.cat/) can export the full map in raster format (tif) or vector format (geopackage). Tracks can be saved in GPX format as layers.
+
+```{r}
+file_name = "data/instamaps/itinerari.gpx"
+# external pointer is used
+doc = htmlTreeParse(file = file_name, useInternalNodes = T)
+```
+
+```{r}
+node = getNodeSet(doc, "/html/body/gpx")
+gpx_info = xmlChildren(node[[1]])
+str(gpx_info)
+```
+
+### Metadata
+
+Metadata contains interesting information about the bounding box for the map
+
+```{r}
+metadata = xmlChildren(gpx_info$metadata)
+bounds <- xmlAttrs(metadata$bounds)
+bb = as.numeric(bounds)
+names(bb) = names(bounds)
+bb
+```
+
+### Track points
+
+```{r}
+track_node = getNodeSet(doc, "/html/body/gpx/rte/rtept")
+xmlSize(track_node)
+```
+```{r}
+track_node[[1]]
+```
+Only coordinates information is available.
+
+```{r}
+coords <- xpathSApply(doc, path = "//rtept", xmlAttrs)
+```
+
+```{r}
+track_df <- data.frame(
+  lat = as.numeric(coords["lat",]),
+  lon = as.numeric(coords["lon",]))
+```
+
+## Data from Vissir
+
+[Vissir](http://www.icc.cat/vissir3/) is the Geoinformation advanced viewer of the Institut Cartogràfic i Geològic de Catalunya.
+
+```{r}
+file_name = "data/vissir/itinerari_fet_amb_vissir.gpx"
+# external pointer is used
+doc = htmlTreeParse(file = file_name, useInternalNodes = T)
+```
+
+```{r}
+node = getNodeSet(doc, "/html/body/gpx")
+gpx_info = xmlChildren(node[[1]])
+str(gpx_info)
+```
+
+### Metadata
+
+```{r}
+metadata = xmlChildren(gpx_info$metadata)
+metadata
+```
+
+### Track Points
+
+```{r}
+track_node = getNodeSet(doc, "/html/body/gpx/trk/trkseg/trkpt")
+xmlSize(track_node)
+```
+```{r}
+track_node[[1]]
+```
+Only coordinates information is available.
+
+```{r}
+coords <- xpathSApply(doc, path = "//trkpt", xmlAttrs)
+```
+
+```{r}
+track_df <- data.frame(
+  lat = as.numeric(coords["lat",]),
+  lon = as.numeric(coords["lon",]))
+```
+
+
+
+
+
+
+
+
