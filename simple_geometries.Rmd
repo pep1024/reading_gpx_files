@@ -1,0 +1,382 @@
+---
+title: "Simple geometries"
+author: "Pep Porrà"
+date: "2020-10-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Goal
+
+To give examples of using simple geometry objects (geospatial vectors):
+
+* sfg (Simple feature geometries)
+* sfc (simple feature geometry list-columns)
+* sf (Simple features)
+
+## **sf** Package
+
+```{r}
+library(tidyverse)
+library(sf)
+library(ggplot2)
+```
+
+Main Reference to understand the concepts used in these examples is the first vignette of the **sf** package by Edzer Pebesma [link](https://cran.r-project.org/web/packages/sf/vignettes/sf1.html) 
+
+## Structures
+
+* First: Simple geometries POINTS, LINESTRINGS, POLYGONS, ... (sfg objects, simple feature geometry)
+* Second: Simple geometry columns (sfc)
+* Third: Simple features (sf objects)
+
+### **s**imple **f**eature **g**eometry
+
+#### POINT / MULTIPOINT
+
+```{r}
+p1 = st_point(c(1, 2))
+p1
+```
+
+```{r}
+p2 = st_point(c(1, 2, 3, 4))
+p2
+```
+```{r}
+p2 = st_point(5:6)
+```
+
+```{r}
+class(p2)
+```
+```{r}
+methods(class = "POINT")
+```
+
+```{r}
+p3 = st_point(rep(0,2))
+```
+
+```{r}
+n_points = c(p1, p2, p3)
+```
+
+Several points as sfg are a MULTIPOINT
+
+```{r}
+class(n_points)
+```
+
+
+```{r}
+plot(n_points, axes = T, las = 1)
+grid()
+plot(n_points, pch = 16, col = "red", add = TRUE)
+text(st_coordinates(p1) + 0.5 * c(1, 0), "p1")
+text(st_coordinates(p2) + 0.5 * c(1, 0), "p2")
+text(st_coordinates(p3) + 0.5 * c(1, 0), "p3")
+```
+
+```{r}
+ggplot(n_points) + geom_sf(col = "red")
+```
+
+
+Other ways to build a MULTIPOINT
+
+```{r}
+st_multipoint(c(p1, p2))
+```
+
+```{r}
+st_multipoint(st_coordinates(c(p1, p2))[, 1:2])
+```
+```{r}
+st_multipoint(rbind(st_coordinates(p1), st_coordinates(p2)))
+```
+
+```{r}
+st_multipoint(rbind(p1, p2))
+```
+```{r}
+st_multipoint(as.matrix(c(p1, p2)))
+```
+
+```{r}
+methods(class = "sfg")
+```
+
+```{r}
+set.seed(1023)
+mp1 = st_multipoint(matrix((1:8) + runif(8), 4, 2, byrow = T))
+mp1
+
+```
+
+#### LINESTRING / MULTILINESTRING
+
+```{r}
+(
+  l1 = st_linestring(c(p1, p2))
+)
+```
+```{r}
+(
+  l2 = st_linestring(c(p1, p3))
+)
+```
+```{r}
+(
+  l3 = st_linestring(mp1)
+)
+```
+```{r}
+ml1 = st_multilinestring(list(l1, l2, l3))
+```
+
+```{r}
+plot(ml1, axes = TRUE)
+plot(st_cast(ml1, "MULTIPOINT"), pch = 16, col = "red", add = TRUE)
+```
+
+#### POLYGON / MULTIPOLYGON
+
+Create a function that distributes n equidistant points in a circle.
+
+```{r}
+n_pts_unit <- function(n, polygon = FALSE, r = 1, start = pi / 2){
+  
+  angles = 2 * pi * ((1:n) - 1) / n + start
+  x = round(r * cos(angles), 8)
+  y = round(r * sin(angles), 8)
+  mp = matrix(c(x, y), n, 2)
+  if (polygon) mp = rbind(mp, mp[1, ])
+  result = st_multipoint(mp)
+  return(result)
+} 
+```
+
+```{r}
+points_p1 = n_pts_unit(11)
+points_p1 = rbind(points_p1, points_p1[1, ])
+(
+  pp1 = st_polygon(list(points_p1))
+)
+```
+```{r}
+plot(pp1, axes = TRUE)
+plot(st_cast(pp1, "MULTIPOINT"), pch = 16, col = "red", add = TRUE)
+```
+
+
+```{r}
+points_p2 = n_pts_unit(5)
+points_p2 = rbind(points_p2, points_p2[1, ])
+
+(
+  pp2 = st_polygon(list(points_p2, 0.8 * points_p2))
+)
+```
+```{r}
+plot(pp2, col = 'grey')
+```
+```{r}
+plot(
+  st_multipolygon(
+    list(
+      list(n_pts_unit(4, polygon = T, 2)),
+      list(n_pts_unit(6, polygon = T, 2)),
+      list(n_pts_unit(9, polygon = T, 2))
+    )
+  )
+)
+```
+
+```{r}
+old_par = par(mar = rep(0,4))
+n = 11
+plot(
+  st_multipolygon(
+    list(
+      lapply( ((1:n) - 1) * 2 * pi / n , 
+        function(alpha) n_pts_unit(9, polygon = T, 
+          r = 2 - 2 * alpha / (2 * pi) , start = alpha))
+    )
+  )
+)
+par(old_par)
+```
+
+
+## **s**imple **f**eature **c**olumn
+
+sfg objects can be turn into sfc objects that have a coordinate reference system (CRS attribute). All the geometry information of sf objects is contained in an object of type sfc
+
+```{r}
+(sc_mp1 =st_sfc(mp1))
+```
+
+```{r}
+st_coordinates(sc_mp1)
+```
+
+
+
+We can use `st_cast` function to simplify a geometry. For instance, obtain teh points in a multipoint object as an object with n points geometry
+
+```{r}
+(
+  sc_n_p1 = st_cast(sc_mp1, "POINT")
+)
+```
+All sfg elements of a sfc are of equal type and each of them correspond to an element of a list. For instance, sc_n_p1 has 4 features. Therefore, sc_n_p1[[2]] gives us the sfg of the second element and it is of class "sfg"
+
+
+```{r}
+sc_n_p1[[2]]
+```
+```{r}
+sc_n_p1[[2]] %>% class()
+```
+
+
+
+```{r}
+st_coordinates(sc_n_p1)
+```
+We can also build linestrings for multipoints or points
+
+```{r}
+st_cast(sc_mp1, "LINESTRING")
+```
+From points to multipoints, use `st_union`
+
+```{r}
+st_union(
+  st_cast(sc_mp1, "POINT")
+)
+```
+
+```{r}
+sc_mp1
+```
+
+
+```{r}
+st_cast(st_union(sc_n_p1[1], sc_n_p1[2]), "LINESTRING")
+```
+```{r}
+st_linestring(c(sc_n_p1[[1]], sc_n_p1[[2]]))
+```
+
+```{r}
+(
+  segments_n_p1 = 
+  lapply(1:(length(sc_n_p1) - 1), 
+    function(k) st_linestring(c(sc_n_p1[[k]], sc_n_p1[[k + 1]])))
+)
+```
+```{r}
+segments_n_p1[[1]]
+```
+```{r}
+st_sfc(segments_n_p1)
+```
+A function to transform a sfc with n POINTs to a sfc with the n-1 segments created sequentially for each pair of segments reads
+
+```{r}
+points_to_segments = function(sfc){
+  n_segments = length(sfc) - 1
+  crs = st_crs(sfc)
+  
+  result = st_sfc(
+    lapply(1:n_segments, 
+      function(k) st_linestring(c(sfc[[k]], sfc[[k + 1]]))),
+    crs = crs
+  )
+  return(result)
+}
+
+```
+
+```{r}
+points_to_segments(sc_n_p1)
+```
+This function is useful when working with routes in gpx files.
+
+
+```{r}
+(
+  sc_lp1 = st_cast(sc_mp1, "LINESTRING")
+)
+```
+```{r}
+st_length(sc_lp1)
+```
+```{r}
+st_cast(sc_lp1, 'MULTIPOINT')
+```
+
+
+```{r}
+plot(sc_lp1, axes = TRUE)
+plot(st_cast(sc_lp1, 'POINT'),
+  pch = 16, col = "red", add = TRUE)
+```
+
+
+```{r}
+st_segmentize(sc_lp1, 1)
+```
+```{r}
+plot(sc_lp1, axes = TRUE)
+plot(st_cast(sc_lp1, 'POINT'),
+  pch = 16, col = "red", add = TRUE)
+plot(st_cast(
+    st_segmentize(sc_lp1, 2.5), 'POINT'),
+  pch = 1, col = "green", add = TRUE, cex = 2)
+```
+
+Function to find points at given units length
+
+```{r}
+total_distance = st_length(sc_lp1)
+unit_length = 4
+n_exact_distance = floor(total_distance / unit_length)
+st_line_sample(sc_lp1, 
+  sample = c(0, unit_length * (1:n_exact_distance), total_distance)/total_distance)
+```
+```{r}
+plot(sc_lp1, axes = TRUE)
+plot(st_cast(sc_lp1, 'POINT'),
+  pch = 16, col = "red", add = TRUE)
+plot(
+  st_cast(
+    st_line_sample(sc_lp1, 
+      sample = c(0, unit_length * (1:n_exact_distance), total_distance)/total_distance),
+    'POINT'),
+  pch = 16, col = "green", add = TRUE)
+```
+
+## **sf** objects
+
+On top of the geometric information, we add columns that have information for each featurein the sfc part. For instance, in order to convert the sfc object sc_n_p1 into an sf object we define a column with the id of each feature.
+
+```{r}
+(
+  sf_n_p1 = st_sf(id = 1:length(sc_n_p1), sc_n_p1)
+)
+```
+
+```{r}
+plot(sf_n_p1, axes = T)
+```
+
+```{r}
+ggplot(sf_n_p1) + geom_sf(aes(color = as.factor(id)))
+```
+

@@ -1,0 +1,93 @@
+---
+title: "Fitxer de municipis de Catalunya"
+author: "Pep Porrà"
+date: "2020-10-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(ggplot2)
+library(sf)
+library(tidyverse)
+```
+
+## Objectiu
+
+Llegit el fitxer de municipis del Institut Cartogràfic i Geològic de Catalunya (ICGC)
+
+## Fitxer
+
+```{r}
+mapa_municipis = st_read("../geocomputing/data/icgc/bm5mv21sh0tpm1_20200601_0.shp")
+```
+```{r}
+names(mapa_municipis)
+```
+
+```{r}
+# plot(mapa_municipis$geometry, axes = TRUE)
+plot(st_geometry(mapa_municipis), axes = TRUE)
+grid()
+```
+```{r}
+ggplot(mapa_municipis) + geom_sf()
+```
+
+
+```{r}
+st_crs(mapa_municipis)
+```
+
+```{r}
+mapa_municipis %>% filter(CODIPROV == "08") %>%
+  dplyr::select(CODICOMAR) %>% plot()
+```
+
+Municipis "Puja al Bus"
+
+```{r}
+puja_al_bus = c(
+  "Begues", "Castelldefels", "Cornellà de Llobregat", "el Prat de Llobregat",
+  "Esplugues de Llobregat", "Gavà", "l'Hospitalet de Llobregat","Olesa de Bonesvalls",
+  "Sant Boi de Llobregat","Sant Climent de Llobregat", "Sant Feliu de Llobregat",
+  "Sant Joan Despí", "Sant Just Desvern", "Santa Coloma de Cervelló", "Viladecans"
+)
+```
+
+```{r}
+length(puja_al_bus)
+```
+
+```{r}
+mapa_municipis %>% filter(NOMMUNI %in% puja_al_bus) %>%
+  dplyr::select(NOMMUNI) %>% 
+  st_drop_geometry() %>%
+  pull()
+```
+
+
+
+```{r}
+png("data/puja_al_bus_municipis.png")
+mapa_municipis %>% filter(NOMMUNI %in% puja_al_bus) %>%
+  #dplyr::select(geometry) 
+  st_geometry() %>% 
+  plot(main = "Municipis on opera BaixBus")
+dev.off()
+```
+
+```{r}
+mapa_municipis %>% filter(NOMMUNI %in% puja_al_bus) %>%
+  dplyr::select(NOMMUNI) %>% 
+  st_drop_geometry() %>%
+  pull()
+```
+
+
+
+

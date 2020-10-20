@@ -1,34 +1,41 @@
 ---
-title: "Read GPX files from Wikiloc and other GSP software"
+title: "Read GPX files from Wikiloc and other GPS software"
 author: "Pep Porrà"
 date: "2020-10-03"
-output: html_document
+output: 
+  html_document:
+    code_folding: "show"
+    toc: TRUE
+    toc_float: TRUE
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+```{r, message=F, warning=F}
+library(tidyverse)
+library(XML)
+library(sf)
+```
+
 ## Goal
 
-To read file with .gpx extension from GPS software like wikiloc, Strava, Samsung Health and others.
+To read files with .gpx extension from GPS software like wikiloc, Strava, Samsung Health and others.
 
 ## GPX files
 
-GPX, or GPS exchange format is an XML schema designed as a common GPS data format for software applications [wikipedia](https://en.wikipedia.org/wiki/GPS_Exchange_Format).
+GPX, or GPS exchange format, is an XML schema designed as a common GPS data format for software applications [wikipedia](https://en.wikipedia.org/wiki/GPS_Exchange_Format).
 
-Many geocomputation packages in R can read .gpx files: [Gecomputation in R](https://geocompr.robinlovelace.net/). For instance, the package **sf**. Nevertheless, part of the metadata could be missing in some cases. For this reason, I prefer to read GPX files directly as XML objects
+Many geocomputation packages in R can read .gpx files: [Gecomputation in R](https://geocompr.robinlovelace.net/). For instance, the package **sf**. Nevertheless, part of the metadata could be missing in some cases. For this reason, we can read GPX files directly as XML objects.
 
 ## XML package
 
-Again, many packges can read xml and help to parse it in R. I picked **XML** [CRAN](https://CRAN.R-project.org/package=XML) and learned to it using [Gaston Sanchez notes](http://www.cse.chalmers.se/~chrdimi/downloads/web/getting_web_data_r4_parsing_xml_html.pdf).
+Again, many packages can read xml and help to parse it in R. I picked **XML** [CRAN](https://CRAN.R-project.org/package=XML) and learned it using [Gaston Sanchez notes](http://www.cse.chalmers.se/~chrdimi/downloads/web/getting_web_data_r4_parsing_xml_html.pdf).
 
-```{r}
-#install.packages("XML")
-library(XML)
-```
+## Navigating XML structure
 
-## Data from wikiloc
+We read first a file that has an XML structure.
 
 ```{r}
 file_name = "data/wikiloc/montcau-i-la-mola-des-del-coll-d-estenalles.gpx"
@@ -38,41 +45,46 @@ doc = htmlTreeParse(file = file_name, useInternalNodes = T, encoding = "UTF-8")
 
 The parameter encoding is important if character values are not all in English.
 
+Alternative ways to read the .gpx file are also
+
+```{r}
+xml_doc = xmlTreeParse(file_name,  useInternalNodes = T, encoding = "UTF-8")
+xml_r = xmlParse(file_name, useInternalNodes = F, encoding = "UTF-8")
+```
+
+as the XML structure of a GPX file is well structured. We will use the the first one as it is the most general one.
+
+`doc` variable points to the whole XML doc. The root of it is defined as follows
+
 ```{r}
 root_point = xmlRoot(doc)
 ```
 
-```{r}
-str(root_point)
-```
-
-Number of children
-
-```{r}
-xmlSize(root_point)
-```
-Name of the root node. WE will use to identify individual nodes in XPath
+The name of this root node is "html"
 
 ```{r}
 xmlName(root_point)
 ```
+
+We will use the name of the nodes to identify deeper nodes using XPath ("/html"). The html node has not attributes
+
 ```{r}
 xmlAttrs(root_point)
 ```
-Therefore, XPath will start with "/html". Identify the name of the children
+but 1 child
+
+```{r}
+xmlSize(root_point)
+```
+with name "body"
 
 ```{r}
 names(root_point)
 ```
+that can also be obtained once we create the first point node below "html" (root node)
 
 ```{r}
 first_point = xmlChildren(root_point)
-```
-
-```{r}
-xmlSize(first_point)
-```
-```{r}
 xmlName(first_point[[1]])
 ```
 we need [[1]] because `xmlChildren` returns a list. This equivalent to 
@@ -80,89 +92,149 @@ we need [[1]] because `xmlChildren` returns a list. This equivalent to
 ```{r}
 xmlName(first_point$body)
 ```
+Xpath will be now "/html/body". This node has one subnode
 
 ```{r}
-str(first_point$body)
+xmlSize(first_point$body)
 ```
-Xpath will be now "/html/body". Next node reads
-
+that can be read with `xmlChildren`
 
 ```{r}
 second_point = xmlChildren(first_point$body)
 ```
 
-```{r}
-xmlSize(second_point)
-```
+that is call "gpx"
+
 ```{r}
 xmlName(second_point[[1]])
 ```
+This node (XPath = "/html/body/gpx") has 5 attributes
+
 ```{r}
 xmlAttrs(second_point$gpx)
 ```
-Node (XPath = "/html/body/gpx") has 5 attributes
+that can be read using `xmlGetAttr`
 
 ```{r}
 xmlGetAttr(second_point$gpx, "creator")
 ```
-Number of children
+
+or, directly, from the list/vector
+
+```{r}
+xmlAttrs(second_point$gpx)[1]
+```
+```{r}
+xmlAttrs(second_point$gpx)['xmlns:xsi']
+```
+
+Node gpx is the node where the content of gpx file starts. In general, It will have  several subnodes. In this example it has 9 
 
 ```{r}
 xmlSize(second_point$gpx)
 ```
 
+All the subnodes are read in the variable third point
+
 ```{r}
 third_point = xmlChildren(second_point$gpx)
 ```
 
-With `names`, we identify the all children nodes
+With `names`, all children nodes are identified
 
 ```{r}
 names(third_point)
 ```
-So, there 1 of names metadata, 7 of name wpt (way-point) and 1 of name trk. We can also know the number of nodes in each of the 9 nodes using sapply (or lapply) to iterate the nodes and apply a function to each subnode
+So, there are  1 of name metadata, 7 of name wpt (way-point) and 1 of name trk. We can also know the number of nodes in each of the 9 nodes using sapply (or lapply) to iterate the nodes and apply a function to each subnode
 
 ```{r}
 sapply(third_point, xmlSize)
 ```
-Remember that the XPath to reach the third_point node is "/html/body/gpx"
-We use XPath to navigate the document and obtain a list of all elements of a node
+Remember that the XPath to reach the third_point node is "/html/body/gpx". XPath
+can be used to navigate the document and obtain a list of all elements of a node. In this way, 
 
 ```{r}
 node = getNodeSet(doc, "/html/body/gpx")
-children = xmlChildren(node[[1]])
-str(children)
+gpx_node = xmlChildren(node[[1]])
 ```
+gpx_node is equivalent to variable third_point
 
 ```{r}
-identical(third_point, children)
+identical(third_point, gpx_node)
 ```
+## Data from wikiloc
+
+Let us apply XML navigation  to read all information in a wikiloc .gpx file.
+
+```{r}
+file_name = "data/wikiloc/montcau-i-la-mola-des-del-coll-d-estenalles.gpx"
+# external pointer is used
+doc = htmlTreeParse(file = file_name, useInternalNodes = T, encoding = "UTF-8")
+```
+
 ### Metadata
+
+There is only one node with this XPath
 
 ```{r}
 node = getNodeSet(doc, "/html/body/gpx/metadata")
 xmlSize(node)
+```
+```{r}
 node[[1]]
+```
+we can navigate all metadata structure using 'xmlChildren' or 'getNodeSet'.
+
+For instance, to obtain the link to the route in wikiloc, we do the following
+
+```{r}
+node = getNodeSet(doc, "/html/body/gpx/metadata/link")
+```
+
+```{r}
+xmlAttrs(node[[1]])
+```
+The link to wikiloc page of the author of the route is obtained as
+
+```{r}
+node = getNodeSet(doc, "/html/body/gpx/metadata/author/link")
+xmlAttrs(node[[1]])
+```
+and the name of the author
+
+```{r}
+node = getNodeSet(doc, "/html/body/gpx/metadata/author/name")
+```
+
+```{r}
+sapply(node, xmlValue)
 ```
 
 ### Way-points
+
+In a similar way we read all way-points, 7 of them
 
 ```{r}
 wpt_node = getNodeSet(doc, "/html/body/gpx/wpt")
 xmlSize(wpt_node)
 ```
-Size of each subnode
+for instance the first waypoint reads
 
-```{r}
-sapply(wpt_node, xmlSize)
-```
 ```{r}
 wpt_node[[1]]
 ```
+You can see that there 5 nodes in each way-point (ele, time, name, cmt, desc) and the longitude and latitude of the point are the attributes of it
+
 ```{r}
 xmlAttrs(wpt_node[[1]])
 ```
-We can create a data frame with the way-points: name and coordinates
+This can be read as a numeric vector as
+
+```{r}
+sapply(xmlAttrs(wpt_node[[1]]), as.numeric, USE.NAMES = TRUE)
+```
+
+We can create a data frame with the way-points name and coordinates
 
 ```{r}
 n_elements = xmlSize(wpt_node)
@@ -176,32 +248,43 @@ wpt_df$lat = as.numeric(coordinates[, "lat"])
 wpt_df$lon = as.numeric(coordinates[, "lon"])
 ```
 
-In order to get the name, we need get the children for each node wpt and get the value of the node name. There is a function to run this loop over all nodes identified by a given XPath. In our case, the XPath reads "/html/body/gpx/wpt/name" (note that "//name" could also be used in no other name node exists in nodes different than wpt)
+In order to get the name, we need get the children for each node wpt and get the value of the node name. There is a function to run this loop over all nodes identified by a given XPath. In our case, the XPath reads "/html/body/gpx/wpt/name" (note that "//name" could also be used if no other name node exists in nodes different than wpt)
 
 ```{r}
 xpathSApply(doc, path = "/html/body/gpx/wpt/name", xmlValue)
 ```
-In order to be sure that the accents are not translated well, it is important to include encoding = "UTF-8" parameter in `htmlTreeParse`
+In order to be sure that the accents are not messed up, it is important to include encoding = "UTF-8" parameter in `htmlTreeParse`
 
 ```{r}
 wpt_df$name = xpathSApply(doc, path = "/html/body/gpx/wpt/name", xmlValue)
 ```
 
+We have defined a data frame with all way-points information.
+
+```{r}
+as_tibble(wpt_df)
+```
+
 ### Track points
+
+We now read the track points. In totat, there are 1318 points
 
 ```{r}
 track_node = getNodeSet(doc, "/html/body/gpx/trk/trkseg/trkpt")
 xmlSize(track_node)
 ```
+For instance, the fifth point reads
+
 ```{r}
-track_node[[1]]
+track_node[[5]]
 ```
 
 We can see latitude and longitude are attributes while elevation and time are subnodes
 
 ```{r}
 times <- xpathSApply(doc, path = "/html/body/gpx/trk/trkseg/trkpt/time", xmlValue)
-elevations <- as.numeric(xpathSApply(doc, path = "/html/body/gpx/trk/trkseg/trkpt/ele", xmlValue))
+elevations <- as.numeric(
+  xpathSApply(doc, path = "/html/body/gpx/trk/trkseg/trkpt/ele", xmlValue))
 ```
 
 ```{r}
@@ -216,7 +299,77 @@ track_df <- data.frame(
   lon = as.numeric(coords["lon",]))
 ```
 
+We can finally transform times into datetime POSIX
+```{r}
+track_df$time[1:3]
+```
+
+```{r}
+track_df$time = strptime(times, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+track_df$time[1:3]
+```
+
+```{r}
+track_df$time = as.POSIXct(track_df$time)
+attr(track_df$time, "tzone") <- "Europe/Paris"
+track_df$time[1:3]
+```
 Therefore, we have been able to read all details in a wikiloc .gpx file and import them into different data frames.
+
+### Using sf package
+
+**sf** package reads and manipulate many files with geographic information [sf Reference](https://r-spatial.github.io/sf/index.html)
+
+First, we check the layers. There are 5 of them
+
+```{r}
+file_name = "data/wikiloc/montcau-i-la-mola-des-del-coll-d-estenalles.gpx"
+st_layers(file_name)
+```
+
+We can import one layer. If a layer has 0 features it means is empty (routes and route_points in our example)
+
+First read the waypoints layer
+```{r}
+wikiloc_sf_waypoints = st_read(file_name, layer = "waypoints")
+```
+Now the information is in a sf object [Simple Feature in R](https://r-spatial.github.io/sf/index.html) which is equivalent to a data frame plus a column with the geographic information.
+
+For instance, the name field coincides with wpt_df$name
+
+```{r}
+wikiloc_sf_waypoints$name
+```
+Coordinates are in the geometry column with other interesting information. If we just want to extract the coordinates to replicate the data frame we created previously
+
+```{r}
+st_coordinates(wikiloc_sf_waypoints)
+```
+where X is the longitude and y the latitude.
+
+In this way, we can recreate data frame wpt_df, called wpt_df2, as
+
+```{r}
+lon_lat_matrix = st_coordinates(wikiloc_sf_waypoints)
+wpt_df2 = data.frame(
+  name = wikiloc_sf_waypoints$name,
+  lat = lon_lat_matrix[, "Y"],
+  lon = lon_lat_matrix[, "X"])
+```
+
+Now we can read the "tracks" layer
+
+```{r}
+wikiloc_sf_tracks = st_read(file_name, layer = "tracks")
+```
+This layer can be use to plot the route as a line. Finally, the layer "track_points" gives teh same information contained in the node with XPath "/html/body/gpx/trk/trkseg/trkpt" 
+
+```{r}
+wikiloc_sf_track_points = st_read(file_name, layer = "track_points")
+```
+The advantage is that time is already in POSIXct format and elevation is in the field ele. The rest of 26 fields are empty with the exception of the counter field track_seg_point_id that identifies sequentially every point of the tracked route.
+
+Therefore, all geometry information can be obtained faster by using the sf package. The XML reading procedure it is useful when you are interested in non-geographic information.
 
 ## Data from Strava
 
@@ -226,7 +379,7 @@ file_name = "data/strava/sant_ignasi_turo_de_monts_tibidabo_coll_de_la_vinassa_l
 doc = htmlTreeParse(file = file_name, useInternalNodes = T)
 ```
 
-First three nodes are the same: "/html/body/gpx
+First three nodes are the same for all gpx files: "/html/body/gpx". For this file, there's only metadata and track points ("trk")  
 
 ```{r}
 node = getNodeSet(doc, "/html/body/gpx")
@@ -235,39 +388,78 @@ str(gpx_info)
 ```
 ### Metadata
 
+In this meadta, only time is shown
+
 ```{r}
 xmlChildren(gpx_info$metadata)
 ```
-Only time is included
 
 ### Track points
+
+We follow the same process as before to identify that there are a total of 2937 track points
 
 ```{r}
 track_node = getNodeSet(doc, "/html/body/gpx/trk/trkseg/trkpt")
 xmlSize(track_node)
 ```
+The fourth point, for instance, reads
+
 ```{r}
-track_node[[1]]
+track_node[[4]]
+```
+The extension node is specific of the software that generated the file, in this case Strava. It contains information about the cadence. Latitude and longitude are attributes while elevation and time are nodes. 
+
+The following data frame contains all inforamtion in the file
+
+```{r}
+times = xpathSApply(doc, path = "/html/body/gpx/trk/trkseg/trkpt/time", xmlValue)
+times = strptime(times, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+times = as.POSIXct(times)
+attr(times, "tzone") = "Europe/Paris"
 ```
 
-We can see latitude and longitude are attributes while elevation and time are subnodes. there is also information about cadence
-
 
 ```{r}
-times <- xpathSApply(doc, path = "/html/body/gpx/trk/trkseg/trkpt/time", xmlValue)
-elevations <- as.numeric(xpathSApply(doc, path = "/html/body/gpx/trk/trkseg/trkpt/ele", xmlValue))
+elevations = as.numeric(
+  xpathSApply(doc, path = "/html/body/gpx/trk/trkseg/trkpt/ele", xmlValue))
+cadence = as.numeric(
+  xpathSApply(doc, path = "//cad", xmlValue))
 ```
 
 ```{r}
-coords <- xpathSApply(doc, path = "//trkpt", xmlAttrs)
+coords = xpathSApply(doc, path = "//trkpt", xmlAttrs)
 ```
 
 ```{r}
-track_df <- data.frame(
+track_df = data.frame(
   elevation = elevations, time = times,
+  cadence = cadence,
   lat = as.numeric(coords["lat",]),
   lon = as.numeric(coords["lon",]))
 ```
+
+### Using sf package
+
+First, check the layers. There are 5 layers as in the previous file
+
+```{r}
+file_name = "data/strava/sant_ignasi_turo_de_monts_tibidabo_coll_de_la_vinassa_la_pinya_2_vallvidrera_santa_maria_de_jerusalem.gpx"
+st_layers(file_name)
+```
+
+Only tracks and track_point layers have content
+
+First read the tracks layer, that gives the route as a Multi Line String
+
+```{r}
+strava_sf_tracks = st_read(file_name, layer = "tracks")
+```
+Detail of track_points can be obtained as
+
+```{r}
+strava_sf_track_points = st_read(file_name, layer = "track_points")
+```
+with this method, coordinates elevation and times are read but not cadence, as it is specific to Strava gpx files. Having the route directly in a sf object has some advantages although the first method is required if all information in the file is needed
 
 ## Data from Instamaps
 
@@ -279,12 +471,13 @@ file_name = "data/instamaps/itinerari.gpx"
 doc = htmlTreeParse(file = file_name, useInternalNodes = T)
 ```
 
+This file has only metadata and rte (route) information
+
 ```{r}
 node = getNodeSet(doc, "/html/body/gpx")
 gpx_info = xmlChildren(node[[1]])
 str(gpx_info)
 ```
-
 ### Metadata
 
 Metadata contains interesting information about the bounding box for the map
@@ -299,14 +492,19 @@ bb
 
 ### Track points
 
+A total of 152 points are incluede in the route
+
 ```{r}
 track_node = getNodeSet(doc, "/html/body/gpx/rte/rtept")
 xmlSize(track_node)
 ```
+
+Looking at the first point, we can see that each point contains only latitude and longitude as attributes
+
 ```{r}
 track_node[[1]]
 ```
-Only coordinates information is available.
+The coordinates can be exported into a data frame as
 
 ```{r}
 coords <- xpathSApply(doc, path = "//rtept", xmlAttrs)
@@ -317,6 +515,43 @@ track_df <- data.frame(
   lat = as.numeric(coords["lat",]),
   lon = as.numeric(coords["lon",]))
 ```
+
+### Using sf package
+
+First, check the layers. There are 5 layers as in all gpx files
+
+```{r}
+st_layers(file_name)
+```
+
+Only routes and route_points layers have content
+
+First read the routes layer, that gives the route as a Line String
+
+```{r}
+instamaps_sf_routes = st_read(file_name, layer = "routes")
+```
+Detail of route_points can be obtained as
+
+```{r}
+instamaps_sf_route_points = st_read(file_name, layer = "route_points")
+```
+All features are empty with the exception of route_point_id that identifies each point in the route sequentially.
+
+Coordinates of route points can be read easily using `st_coordinates` function
+
+```{r}
+str(st_coordinates(instamaps_sf_route_points))
+```
+
+```{r}
+lon_lat_matrix = st_coordinates(instamaps_sf_route_points)
+instamaps_coordinates = data.frame(
+  lat = lon_lat_matrix[, "Y"],
+  lon = lon_lat_matrix[, "X"])
+head(instamaps_coordinates)
+```
+
 
 ## Data from Vissir
 
@@ -343,6 +578,8 @@ metadata
 
 ### Track Points
 
+A total of 88 points in track_points
+
 ```{r}
 track_node = getNodeSet(doc, "/html/body/gpx/trk/trkseg/trkpt")
 xmlSize(track_node)
@@ -350,7 +587,7 @@ xmlSize(track_node)
 ```{r}
 track_node[[1]]
 ```
-Only coordinates information is available.
+Only coordinates information is available (with more decimals, to be changed with R option digits `options(digits = 15)`).
 
 ```{r}
 coords <- xpathSApply(doc, path = "//trkpt", xmlAttrs)
@@ -362,10 +599,40 @@ track_df <- data.frame(
   lon = as.numeric(coords["lon",]))
 ```
 
+### Using sf package
+
+```{r}
+st_layers(file_name)
+```
+
+Tracks and Track_points layers contain information. We read them as we did for previous cases. As an example, information about the track points
+
+```{r}
+vissir_sf_track_points = st_read(file_name, layer = "track_points")
+```
+
+## Data from GPS visualizer
+
+[GPSvisualizer](https://www.gpsvisualizer.com/draw/) provides a simple interface to draw points, routes and polygons on several maps.
+
+WE can use directly **sf** package function `st_read` that already has drivers to read .gpx files as we have shown before
+
+```{r}
+file_name = "data/gpsvisualizer/1005062619-75178.gpx"
+st_layers(file_name)
+```
 
 
+```{r}
+gps_track_points_sf = st_read(file_name, layer = "track_points")
+```
+```{r}
+gps_tracks_sf = st_read(file_name, layer = "tracks")
+```
+## Conclusion
 
+We have shown how to read the information in a file with gpx extension in two ways:
 
-
-
+1. As XML file. All information can be extracted including metadata
+1. As sf object. Most information related to points tracked can be read directly into a sf object. Nevertheless, specific information of some software (for instance, cadence in files from Strava) and metadata can not be read.
 

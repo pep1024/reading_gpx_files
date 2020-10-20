@@ -1,0 +1,340 @@
+---
+title: "Visualize GPX file information from Strava"
+author: "Pep Porrà"
+date: "2020-10-10"
+output: 
+  html_document:
+    code_folding: "show"
+    toc: TRUE
+    toc_float: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Goal
+
+To visualize the information of GPX file exported from Strava (or other GPS software)
+
+## Read file
+
+```{r, message=F, warning=F}
+library(tidyverse)
+library(sf)
+```
+
+We read first the two pieces of information within the gpx file from Strava
+
+```{r}
+file_name = "data/strava/sant_ignasi_turo_de_monts_tibidabo_coll_de_la_vinassa_la_pinya_2_vallvidrera_santa_maria_de_jerusalem.gpx"
+strava_sf_tracks = read_sf(file_name, layer = "tracks")
+strava_sf_track_points = read_sf(file_name, layer = "track_points")
+```
+Many of the features are empty. We keep only those with information
+
+```{r}
+strava_sf_tracks = strava_sf_tracks %>%
+  dplyr::select(name, type)
+strava_sf_track_points = strava_sf_track_points %>%
+  dplyr::select(track_seg_point_id, ele, time)
+```
+
+### Route length
+
+From the tracks record, length can be computed using `st_length` function
+
+```{r}
+strava_sf_track_points
+```
+
+```{r}
+n_points = nrow(strava_sf_track_points)
+```
+
+
+```{r}
+st_length(strava_sf_tracks)
+```
+We can create a feature that gives the distance between a point and the precedent point. Function `st_distance` computes distances between object x and object y. We just shift object y to start at element 2 and object x to lack last point
+
+```{r}
+d_distances = st_distance(
+  strava_sf_track_points[-n_points, ],
+  strava_sf_track_points[-1, ], by_element = TRUE)
+```
+
+```{r}
+sum(d_distances)
+```
+Note that strava_sf_track_points[-n_points, ] is an sf object with n_points-1 elements
+
+```{r}
+strava_sf_track_points[-n_points, ]
+```
+
+we can also compute the cumulative distances
+
+```{r}
+cum_distances = cumsum(d_distances)
+```
+
+and turn both into features in the sf object
+
+```{r}
+strava_sf_track_points$d_distances = c(units::set_units(0, m), d_distances)
+strava_sf_track_points$cum_distances = c(units::set_units(0, m), cum_distances)
+```
+
+### Time invested 
+
+We can computed the time passed to move form one point of the route to the next one
+
+```{r}
+time_segment = units::as_units(
+  strava_sf_track_points$time[-1] - strava_sf_track_points$time[-n_points])
+```
+
+Total duration of the route reads
+
+```{r}
+total_time = sum(time_segment)
+units::set_units(total_time, min) 
+```
+
+We can create two new features of the track_points object:
+
+1. time per segment
+2. cumulative time 
+
+```{r}
+strava_sf_track_points$time_segment = c(units::set_units(0, s), time_segment)
+strava_sf_track_points$cum_time = c(units::set_units(0, s), cumsum(time_segment))
+```
+
+We can identify if there is any segment where time passed is zero
+
+```{r}
+zero_time_vector = units::set_units(rep(0.0, n_points - 1), s)
+```
+
+```{r}
+sum(time_segment == zero_time_vector)
+```
+```{r}
+which_zero = which(time_segment == zero_time_vector)
+```
+
+```{r}
+d_distances[which_zero]
+```
+### Elevation gained
+
+```{r}
+elevation_segment = units::set_units(
+  strava_sf_track_points$ele[-1] - strava_sf_track_points$ele[-n_points], m)
+```
+
+Total duration of the route reads
+
+```{r}
+total_elevation = sum(elevation_segment)
+total_elevation 
+```
+
+We can create one new features of the track_points object:
+
+1. elevation per segment
+2. cumulative elevation 
+
+```{r}
+strava_sf_track_points$elevation_segment = c(units::set_units(0, m), elevation_segment)
+strava_sf_track_points$cum_elevation = 
+  c(units::set_units(0, m), cumsum(elevation_segment))
+```
+
+```{r}
+plot(strava_sf_track_points$cum_distances,
+  strava_sf_track_points$cum_elevation, col = "orange", pch = 16, cex = 0.5,
+  xlab = "Distance [m]", ylab = "Elevation gain [m]", las = 1)
+grid()
+```
+
+
+
+
+
+```{r}
+st_dimension(strava_sf_tracks)
+```
+```{r}
+str(strava_sf_tracks)
+```
+```{r}
+strava_sf_tracks
+```
+```{r}
+print(strava_sf_track_points, n = 3)
+```
+```{r}
+coordenades_trkp = st_coordinates(strava_sf_track_points)
+```
+
+```{r}
+coordenades_tr = st_coordinates(strava_sf_tracks)
+```
+
+```{r}
+coordenades_tr[1:7, ]
+```
+```{r}
+coordenades_trkp[1:7, ]
+```
+```{r}
+st_geometry_type(strava_sf_tracks)
+```
+```{r}
+st_geometry_type(strava_sf_track_points$geometry[[5]])
+```
+```{r}
+class(strava_sf_tracks$geometry)
+```
+```{r}
+class(strava_sf_track_points$geometry)
+```
+```{r}
+linia = st_cast(strava_sf_tracks, to = 'LINESTRING')
+```
+
+
+```{r}
+st_length(linia)
+```
+
+```{r}
+resp = lapply(2:nrow(strava_sf_track_points), 
+  function(k) st_linestring(coordenades_trkp[(k-1):k, ])
+  )
+```
+
+
+## Simple example
+
+```{r}
+simple_line = st_linestring(matrix(c(0, 0, 1, 1), 2, 2, byrow = TRUE))
+```
+
+```{r}
+plot(simple_line)
+```
+```{r}
+st_crs(simple_line)
+```
+```{r}
+simple_sfc = st_sfc(simple_line)
+```
+
+
+```{r}
+st_crs(simple_sfc) = 4326
+```
+
+```{r}
+st_length(simple_sfc)
+```
+```{r}
+st_line_sample(
+  st_transform(simple_sfc, 3857), 
+  sample = c(0, 100000/as.numeric(st_length(simple_sfc))))
+```
+```{r}
+st_cast(.Last.value, "LINESTRING")
+```
+```{r}
+st_transform(.Last.value, 4326)
+```
+```{r}
+linia_100km = .Last.value
+```
+
+```{r}
+coordenades_punt =  st_coordinates(linia_100km)[2, 1:2]
+point_100km = st_sfc(
+  st_point(coordenades_punt),
+  crs = 4326
+)
+```
+
+
+```{r}
+plot(simple_sfc)
+plot(linia_100km, add = TRUE, col = "red", lwd = 2)
+plot(point_100km, col = "red", pch = 16, add = TRUE, cex = 3)
+```
+
+
+```{r}
+library(tmap)
+```
+```{r}
+tm_shape(gps_track_points_sf) + tm_symbols(size = 0.1, col = "red") 
+```
+
+```{r}
+tm_shape(gps_tracks_sf) + tm_lines(col = "orange", lwd = 2) +
+tm_shape(gps_track_points_sf) + tm_symbols(size = 0.1, col = "red") 
+```
+```{r}
+st_length(gps_tracks_sf)
+```
+
+
+```{r}
+all_segments_distance = st_distance(gps_track_points_sf)
+```
+
+```{r}
+m_distances  = matrix(c(1:112, 2:113), 112, 2)
+```
+
+
+```{r}
+distances = c(units::set_units(0, "m"), all_segments_distance[m_distances])
+sum(distances)
+```
+```{r}
+st_line_sample(gps_tracks_sf, density = units::set_units(1, 1/km))
+```
+
+```{r}
+st_geometry(gps_track_points_sf)[1:2]
+```
+```{r}
+class(st_geometry(gps_track_points_sf)[1:2])
+```
+
+```{r}
+st_crs(gps_track_points_sf)
+```
+
+```{r}
+line_new = st_linestring(st_coordinates(st_geometry(gps_track_points_sf)[1:2]))
+```
+
+```{r}
+line_new_sfc = st_sfc(line_new, crs = 4326)
+```
+
+```{r}
+line_new_sfc
+```
+
+
+```{r}
+st_line_sample(line_new, sample = c(0, 0.25, 0.5, 0.75, 1))
+```
+```{r}
+st_line_sample(st_transform(line_new_sfc, 3857), density = units::set_units(1, 1/m))
+```
+
