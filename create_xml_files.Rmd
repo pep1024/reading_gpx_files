@@ -1,0 +1,354 @@
+---
+title: "Reading and writing xml files in R"
+author: "Pep Porrà"
+date: "2021-05-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Goal
+
+Explain pros ans cons of **XML** package and **xml2** package to write and read xml files
+
+## Example
+
+```{r}
+library(xml2)
+library(XML)
+library(tidyverse)
+```
+
+## **xml2** package
+
+```{r}
+doc1 <- xml2::read_xml('<gpx version="1.1" creator="R">
+<trk>
+<trkseg>
+<trkpt lat="40.779" lon="-74.428" />
+<trkpt lat="40.777" lon="-74.418" />
+</trkseg>
+ </trk>
+ <trk>
+ <trkseg>
+<trkpt lat="50.779" lon="-64.428" />
+<trkpt lat="50.777" lon="-64.418" />
+</trkseg>
+</trk>
+</gpx>')
+```
+
+Function `xml_children` returns a nodeset. Each node can be accessed as a list element
+
+```{r}
+tracks_nodes <- xml2::xml_children(doc1)
+tracks_nodes
+```
+
+First node within track_nodes
+
+```{r}
+tracks_nodes %>% .[[1]]
+```
+
+```{r}
+xml2::xml_length(doc1)
+```
+```{r}
+xml2::xml_name(doc1)
+```
+Extract attributes lat and lon
+
+```{r}
+xml_attrs(xml_find_all(doc1, "//trkpt"))
+```
+
+## Example
+
+```{r}
+df <- structure(list(lon = c(-79.045899, -79.045919, -79.045937, -79.045951, 
+-79.045967, -79.046174, -79.04619, -79.046203, -79.046302, -79.046311, 
+-79.046704, -79.046694, -79.046687, -79.046702, -79.046727, -79.046735, 
+-79.046739, -79.046752, -79.046879, -79.046885), lat = c(35.898049, 
+35.89805, 35.898054, 35.898059, 35.898066, 35.8981, 35.898108, 
+35.898115, 35.898169, 35.898177, 35.898017, 35.898038, 35.898021, 
+35.89801, 35.898004, 35.897989, 35.897964, 35.897954, 35.897897, 
+35.897905), ele = c("99.6", "99.6", "99.8", "99.8", "99.8", "101.2", 
+"101.2", "101.2", "101.6", "102.0", "105.8", "134.2", "134.2", 
+"134.2", "107.2", "107.0", "107.2", "107.4", "107.6", "107.6"
+), time = c("2019-02-06T01:34:35Z", "2019-02-06T01:34:36Z", "2019-02-06T01:34:37Z", 
+"2019-02-06T01:34:38Z", "2019-02-06T01:34:39Z", "2019-02-06T01:34:52Z", 
+"2019-02-06T01:34:53Z", "2019-02-06T01:34:54Z", "2019-02-06T01:35:02Z", 
+"2019-02-06T01:35:07Z", "2019-02-06T00:15:59Z", "2019-02-06T00:16:00Z", 
+"2019-02-06T00:16:01Z", "2019-02-06T00:16:03Z", "2019-02-06T00:16:04Z", 
+"2019-02-06T00:16:05Z", "2019-02-06T00:16:09Z", "2019-02-06T00:16:10Z", 
+"2019-02-06T00:16:15Z", "2019-02-06T00:16:17Z"), activity = c("Run", 
+"Run", "Run", "Run", "Run", "Run", "Run", "Run", "Run", "Run", 
+"Run", "Run", "Run", "Run", "Run", "Run", "Run", "Run", "Run", 
+"Run")), row.names = c(1020L, 1021L, 1022L, 1023L, 1024L, 1025L, 
+1026L, 1027L, 1028L, 1029L, 1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 
+10L), class = "data.frame")
+```
+
+```{r}
+doc <- xml_new_root("gpx",
+  version = "1.1.0",
+  creator = "R pep",
+  "xmlns:xsi"="http://www.w3.org/2001/XMLSchema-instance",
+  xmlns="http://www.topografix.com/GPX/1/1",
+  "xsi:schemaLocation"="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd",
+  "xmlns:gpxtpx"="http://www.garmin.com/xmlschemas/TrackPointExtension/v1"
+)
+```
+
+```{r}
+doc
+```
+
+```{r}
+xml_add_child(doc, "trk")
+xml_add_child(doc, "trk")
+```
+
+```{r}
+doc
+```
+
+```{r}
+xml_children(doc)
+```
+
+Add name to each track
+
+```{r}
+xml_add_child(xml_children(doc), "name", c("track 1", "track 2"))
+```
+
+Add the `trkseg` nodes
+```{r}
+xml_add_child(xml_children(doc), "trkseg")
+```
+
+```{r}
+doc
+```
+
+```{r}
+trkseg_nodes <- xml_find_all(doc, "//trkseg")
+for(k in 1:10) xml_add_child(trkseg_nodes, "trkpt")
+
+```
+
+```{r}
+trkpt_nodes <- xml_find_all(trkseg_nodes, "//trkpt")
+```
+
+```{r}
+xml_set_attr(trkpt_nodes, "lat", df$lat)
+xml_set_attr(trkpt_nodes, "lon", df$lon)
+xml_add_child(trkpt_nodes, "ele", df$ele)
+xml_add_child(trkpt_nodes, "time", df$time)
+```
+
+```{r}
+doc
+```
+
+
+```{r}
+write_xml(doc, "example_1.gpx")
+```
+
+
+```{r}
+xml2::xml_children(doc1)[[1]] %>% xml2::xml_children() %>% .[[1]]
+```
+Afegir un nou node `trk`
+
+```{r}
+xml2::xml_add_child(doc1, "trk")
+```
+
+```{r}
+doc1
+```
+Afegir un enter (ele = 200) a dins de les coordenades del primer punt
+
+```{r}
+primer_punt_node <- 
+  xml2::xml_children(doc1)[[1]] %>% xml2::xml_children() %>% .[[1]] %>% xml2::xml_children() %>% .[[1]]
+```
+
+```{r}
+xml2::xml_add_child(primer_punt_node, "ele")
+```
+
+```{r}
+ele_node <- primer_punt_node %>% xml2::xml_children() %>% .[[1]]
+```
+
+```{r}
+xml2::xml_text(ele_node) <- 200
+```
+
+```{r}
+xml2::xml_text(ele_node) <- '\"200\"'
+```
+
+```{r}
+print(doc1)
+```
+## Create a track
+
+```{r}
+add_gpx <-  function(version = "1.1.0", creator = "R - pep"){
+  xml_new_root("gpx",
+  version = version,
+  creator = creator,
+  "xmlns:xsi"="http://www.w3.org/2001/XMLSchema-instance",
+  xmlns="http://www.topografix.com/GPX/1/1",
+  "xsi:schemaLocation"="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd",
+  "xmlns:gpxtpx"="http://www.garmin.com/xmlschemas/TrackPointExtension/v1")
+}
+```
+
+
+```{r}
+add_trk <- function(parent, df, name = NULL) {
+  trk_node <- xml_add_child(parent, "trk")
+  n_points <- nrow(df)
+  if(!is.null(name)) xml_add_child(trk_node, "name", name)
+  # add trk, name, trkseg, trkpt
+  trkseg_node <- xml_add_child(trk_node, "trkseg")
+  for(k in 1:n_points) {xml_add_child(trkseg_node, "trkpt")}
+  trkpt_nodes <- xml_find_all(trkseg_node, ".//trkpt")
+  # create attribute lon, lat
+  xml_set_attr(trkpt_nodes, "lat", df$lat)
+  xml_set_attr(trkpt_nodes, "lon", df$lon)
+  # create nodes ele and time if they exist 
+  if("ele" %in% names(df)) xml_add_child(trkpt_nodes, "ele", df$ele)
+  if("time" %in% names(df)) xml_add_child(trkpt_nodes, "time", df$time)
+  return(invisible(parent))
+}
+```
+
+```{r}
+doc1 <- add_gpx(creator = "pep")
+add_trk(doc1, df, name = "track_example")
+write_xml(doc1, file = "output_nou.gpx", options = c("format", "no_empty_tags"))
+```
+```{r}
+doc2 <- add_gpx(creator = "pep")
+add_trk(doc2, df[1:10, ], name = "track_1")
+add_trk(doc2, df[11:20, ], name = "track_2")
+write_xml(doc2, file = "output_doble.gpx", options = c("format", "no_empty_tags"))
+```
+## Third method using `sf_write`
+
+
+
+## **XML** package
+
+
+```{r}
+doc2 <- XML::xmlParse('<gpx version="1.1" creator="R">
+<trk>
+<trkseg>
+<trkpt lat="40.779" lon="-74.428" />
+<trkpt lat="40.777" lon="-74.418" />
+</trkseg>
+ </trk>
+ <trk>
+ <trkseg>
+<trkpt lat="50.779" lon="-64.428" />
+<trkpt lat="50.777" lon="-64.418" />
+</trkseg>
+</trk>
+</gpx>')
+```
+
+```{r}
+print(doc2)
+```
+
+
+
+```{r}
+XML::xmlSize(doc2)
+```
+```{r}
+XML::xmlName(XML::xmlRoot(doc2))
+```
+
+
+```{r}
+XML::xmlChildren(XML::xmlRoot(doc2)) 
+```
+```{r}
+XML::xmlChildren(XML::xmlRoot(doc2)) %>% XML::xmlSize()
+```
+
+```{r}
+XML::xmlChildren(XML::xmlRoot(doc2)) %>% .[[1]] %>% XML::xmlChildren() %>% .[[1]]
+```
+
+```{r}
+first_point <- XML::getNodeSet(doc2, "//trkpt")
+first_point_node = first_point[[1]]
+```
+
+```{r}
+XML::xmlSize(first_point)
+```
+```{r}
+first_point[[1]]
+```
+
+```{r}
+first_point_node
+```
+```{r}
+XML::newXMLNode("ele", '\"200\"' , parent = first_point_node)
+```
+```{r}
+doc2
+```
+
+
+
+```{r}
+XML::newXMLNode("ele", parent = first_point_node)
+```
+```{r}
+XML::xmlValue(XML::xmlChildren(first_point_node)[[4]]) <- 500
+```
+
+```{r}
+doc2
+```
+
+
+```{r}
+XML::addChildren(first_point_node, "ele")
+```
+```{r}
+ele_node_eq <- XML::xmlChildren(first_point_node)
+```
+
+```{r}
+doc2
+```
+
+```{r}
+XML::xmlValue(ele_node_eq[[1]])
+```
+
+
+
+
+
+
+
+

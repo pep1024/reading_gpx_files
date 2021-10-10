@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<gpx version="1.1" creator="https://onthegomap.com" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>0,58 km route</name>
+    <link href="https://onthegomap.com">
+      <text>On The Go Map</text>
+    </link>
+    <time>2021-04-29T18:05:34.212Z</time>
+    <copyright author="On The Go Map, OpenStreetMap Contributors">
+      <year>2021</year>
+    </copyright>
+  </metadata>
+  <rte>
+    <name>0,58 km route</name>
+    <rtept lat="41.40966" lon="2.14629">
+      <ele>120</ele>
+    </rtept>
+    <rtept lat="41.40939" lon="2.14574">
+      <ele>123.1</ele>
+    </rtept>
+    <rtept lat="41.40829" lon="2.14685">
+      <ele>110.5</ele>
+    </rtept>
+    <rtept lat="41.40742" lon="2.1458">
+      <ele>109.8</ele>
+    </rtept>
+    <rtept lat="41.40712" lon="2.14616">
+      <ele>107</ele>
+    </rtept>
+    <rtept lat="41.40602" lon="2.14491">
+      <ele>108.6</ele>
+    </rtept>
+    <rtept lat="41.40576" lon="2.14523">
+      <ele>106.3</ele>
+    </rtept>
+  </rte>
+</gpx>

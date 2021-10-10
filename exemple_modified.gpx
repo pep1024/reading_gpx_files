@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<gpx version="1.1" creator="R">
+  <trk>
+    <name>first track</name>
+    <trkseg>
+      <trkpt lat="50.779" lon="-64.428" />
+      <trkpt lat="50.777" lon="-64.418" />
+    </trkseg>
+  </trk>
+  <trk>
+    <name>second track</name>
+    <trkseg>
+      <trkpt lat="40.779" lon="-74.428" />
+      <trkpt lat="40.777" lon="-74.418" />
+    </trkseg>
+  </trk>
+</gpx>

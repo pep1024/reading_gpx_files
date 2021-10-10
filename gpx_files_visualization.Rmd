@@ -1,7 +1,7 @@
 ---
-title: "Visualize GPX file information from Strava"
-author: "Pep Porrà"
-date: "2020-10-10"
+title: "Repair GPS data in a GPX file with R"
+author: "Pep Porrà (josepmporra@gmail.com)"
+date: "2021-04-18"
 output: 
   html_document:
     code_folding: "show"
@@ -16,325 +16,325 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Goal
 
-To visualize the information of GPX file exported from Strava (or other GPS software)
+To repair GPS data in a GPX file using R and generate a new correct GPX file  
 
-## Read file
+## Context
 
-```{r, message=F, warning=F}
+I'm assuming you have a GPX file that is the result of recording some activity (trail running, for instance).
+
+Why would you want to repair, that is to modify, GPS data contained in a GPX file? There are several reasons. GPS data quality depends on the device used. Your track can be split in several tracks because auto-pause was on. GPS signal is lost in some parts of your activity. Of course, as soon as you modify the raw data of your activity, you may get closer to reality (my intention) or far from it (cheating).
+
+I run for fun and my only goal is to get my tracks closer to reality when there are obvious signals that this is not the case. I have a Samsung Active smart watch which I do not recommend for serious activity tracking. I have my activities tracked with Samsung Health and synchronized to Strava automatically. In one of these activities, Strava flagged my activity: "Check the activity type, crop vehicle portions or make the activity private to resolve". I want to show the way I resolved it in case it could be of interest to any of you.
+
+## Read data
+
+These are the packages I will use. As always in R, this is a matter of taste although I've tried many others before.
+
+```{r, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(sf)
+library(mapview)
+library(lubridate)
+library(xml2)
 ```
 
-We read first the two pieces of information within the gpx file from Strava
+We read first the relevant information within the gpx file. Take into account that every device and tracking software adds specific information (cardio info, derived measurements -- pace, terrain inclination). We will only read the minimum information (coordinates, track points time and, possibly, elevations) to create a modified GPX file with the corrected data.
 
-```{r}
-file_name = "data/strava/sant_ignasi_turo_de_monts_tibidabo_coll_de_la_vinassa_la_pinya_2_vallvidrera_santa_maria_de_jerusalem.gpx"
-strava_sf_tracks = read_sf(file_name, layer = "tracks")
-strava_sf_track_points = read_sf(file_name, layer = "track_points")
-```
-Many of the features are empty. We keep only those with information
+### GPX file
 
+Identify first the file or files to read
+
 ```{r}
-strava_sf_tracks = strava_sf_tracks %>%
-  dplyr::select(name, type)
-strava_sf_track_points = strava_sf_track_points %>%
-  dplyr::select(track_seg_point_id, ele, time)
+file_name <-  "data/samsung_health/20210411_174627.gpx"
 ```
 
-### Route length
+### Layers
 
-From the tracks record, length can be computed using `st_length` function
-
-```{r}
-strava_sf_track_points
-```
+Learn then the layers contained in the file. Usually you will have a track, the individual tracked points and others (for instance, waypoints). Each layer will be read in a different sf object. All metadata information is discarded at this stage.
 
 ```{r}
-n_points = nrow(strava_sf_track_points)
+st_layers(file_name)
 ```
 
+## Read track
 
 ```{r}
-st_length(strava_sf_tracks)
+sf_tracks <- read_sf(file_name, layer = "tracks")
+sf_track_points <- read_sf(file_name, layer = "track_points")
 ```
-We can create a feature that gives the distance between a point and the precedent point. Function `st_distance` computes distances between object x and object y. We just shift object y to start at element 2 and object x to lack last point
 
-```{r}
-d_distances = st_distance(
-  strava_sf_track_points[-n_points, ],
-  strava_sf_track_points[-1, ], by_element = TRUE)
-```
+At this point, we get rid of all features that are not elevation, time or the geometry feature itself (geometry column) for the track_points layer. For the tracks layer, only the geometry column is required. 
 
 ```{r}
-sum(d_distances)
+sf_tracks_min <- sf_tracks %>% 
+  select(geometry)
+sf_track_points_min <- sf_track_points %>% 
+  select(ele, time)
 ```
-Note that strava_sf_track_points[-n_points, ] is an sf object with n_points-1 elements
 
-```{r}
-strava_sf_track_points[-n_points, ]
-```
+## Map tracks
 
-we can also compute the cumulative distances
+We need now to map both tracks to look for issues so big that can be appreciated at naked eye. We can use `ggplot2` and many other packages but I found mapview really convenient. It is better to run it in the console because it will be open in Rstudio viewer and can be easily explored. Run the following simple code to visualize each tracked point
 
-```{r}
-cum_distances = cumsum(d_distances)
 ```
-
-and turn both into features in the sf object
+mapview(sf_track_points)
+```
 
-```{r}
-strava_sf_track_points$d_distances = c(units::set_units(0, m), d_distances)
-strava_sf_track_points$cum_distances = c(units::set_units(0, m), cum_distances)
+and this other to visualize the full track
+ 
 ```
+mapview(sf_tracks)
+``` 
 
-### Time invested 
+## Find issues
 
-We can computed the time passed to move form one point of the route to the next one
+The first visualization helps you to identify the point or points where there might some potential issues.
+In our case, we have identify three issues:
 
-```{r}
-time_segment = units::as_units(
-  strava_sf_track_points$time[-1] - strava_sf_track_points$time[-n_points])
-```
+1. From points 1 to 21, signal was wondering around. I remember clearly the track I followed.
+2. Point 13 is completely out of any logic
+3. From points 65 to 70, signal is lost and.
 
-Total duration of the route reads
+<!--
+TBD: put the three images in a table with three columns
+-->
 
-```{r}
-total_time = sum(time_segment)
-units::set_units(total_time, min) 
-```
+![](Rplot_1.png)
 
-We can create two new features of the track_points object:
+![](Rplot_2.png)
 
-1. time per segment
-2. cumulative time 
 
-```{r}
-strava_sf_track_points$time_segment = c(units::set_units(0, s), time_segment)
-strava_sf_track_points$cum_time = c(units::set_units(0, s), cumsum(time_segment))
-```
+![](Rplot_3.png)
 
-We can identify if there is any segment where time passed is zero
+## Fix Issues
 
-```{r}
-zero_time_vector = units::set_units(rep(0.0, n_points - 1), s)
-```
+### Fix issue 2
 
-```{r}
-sum(time_segment == zero_time_vector)
-```
-```{r}
-which_zero = which(time_segment == zero_time_vector)
-```
+This issue is fixed by simply removing the anomalous point (13). We can do it in both geometries although we will use only one of them to create the modified track (track_points)
 
 ```{r}
-d_distances[which_zero]
+sf_track_points_min_1 <- sf_track_points_min[-13, ]
 ```
-### Elevation gained
 
-```{r}
-elevation_segment = units::set_units(
-  strava_sf_track_points$ele[-1] - strava_sf_track_points$ele[-n_points], m)
-```
+### Fix issue 1
 
-Total duration of the route reads
+To correct this segment, we will run the following steps:
 
-```{r}
-total_elevation = sum(elevation_segment)
-total_elevation 
-```
+1. Interpolate the correct track between points 1 and 20.
+1. Compute distances and cumulative distances of intervals between points 1 and 20
+1. Deduce average pace between point 1 and point 20
+1. Build the time for each point intermediate point assuming average speed
+1. Replace the 20 first points by the new track
 
-We can create one new features of the track_points object:
+To recreate the track followed between point 1 and 20, I recommend to use [onthegomap](https://onthegomap.com/). You create the replacing track and export it into a gpx file. It may require a bit of trial and error. 
 
-1. elevation per segment
-2. cumulative elevation 
 
 ```{r}
-strava_sf_track_points$elevation_segment = c(units::set_units(0, m), elevation_segment)
-strava_sf_track_points$cum_elevation = 
-  c(units::set_units(0, m), cumsum(elevation_segment))
+st_layers("data/onthego/onthegomap-issue1-route.gpx")
 ```
 
+Note that now we have the track as a route
+
 ```{r}
-plot(strava_sf_track_points$cum_distances,
-  strava_sf_track_points$cum_elevation, col = "orange", pch = 16, cex = 0.5,
-  xlab = "Distance [m]", ylab = "Elevation gain [m]", las = 1)
-grid()
+sf_issue1 <- read_sf("data/onthego/onthegomap-issue1-route.gpx", layer = "route_points")
+sf_issue1_min <-  sf_issue1 %>%  select(time, ele)
 ```
 
+We add first and last point of the track we want to substitute to the new track
 
+```{r}
+sf_issue1_complete <- rbind(sf_track_points_min_1[1, ], sf_issue1_min, sf_track_points_min_1[20, ])
+```
 
+As the elevation measurement will not agree between the original track segment and the new one, we take the original as the truth (for consistency with the rest of track) and correct that of the new track. I'm assuming no change in elevation between the two last points to compute a fix gap to correct rest of elevations. 
 
 
-```{r}
-st_dimension(strava_sf_tracks)
-```
-```{r}
-str(strava_sf_tracks)
-```
 ```{r}
-strava_sf_tracks
+elevation_gap <- diff(sf_issue1_complete$ele[4:5])
+sf_issue1_complete$ele[2:4] <- sf_issue1_complete$ele[2:4] + elevation_gap
+sf_issue1_complete$ele
 ```
-```{r}
-print(strava_sf_track_points, n = 3)
-```
-```{r}
-coordenades_trkp = st_coordinates(strava_sf_track_points)
-```
 
-```{r}
-coordenades_tr = st_coordinates(strava_sf_tracks)
-```
+We need to compute the time for each new point. we compute these times assuming a constant pace. 
 
 ```{r}
-coordenades_tr[1:7, ]
+dist_ab <- as.numeric(st_distance(sf_issue1_complete[c(1, 5), ])[1, 2])
+time_ab <- as.numeric(diff(sf_issue1_complete$time[c(1, 5)]))
+pace_ab <- dist_ab / time_ab
 ```
-```{r}
-coordenades_trkp[1:7, ]
-```
-```{r}
-st_geometry_type(strava_sf_tracks)
-```
-```{r}
-st_geometry_type(strava_sf_track_points$geometry[[5]])
-```
-```{r}
-class(strava_sf_tracks$geometry)
-```
-```{r}
-class(strava_sf_track_points$geometry)
-```
+
 ```{r}
-linia = st_cast(strava_sf_tracks, to = 'LINESTRING')
+sf_issue1_complete$time[2:4] <- 
+  sf_issue1_complete$time[1] + as.numeric(st_distance(sf_issue1_complete)[2:4, 1]) / pace_ab
+sf_issue1_complete$time
 ```
 
+We replace the old part of the track (`sf_track_points_min_1[1:20, ]`) by the new one (`sf_issue1_complete`):
 
 ```{r}
-st_length(linia)
+sf_tracks_points_min_2 <- rbind(sf_issue1_complete, sf_track_points_min_1[-(1:20), ])
 ```
 
-```{r}
-resp = lapply(2:nrow(strava_sf_track_points), 
-  function(k) st_linestring(coordenades_trkp[(k-1):k, ])
-  )
-```
+It would be possible to interpolate more points using `st_segmentize`. Nevertheless, I prefer to leave it this way as it clearly shows there was an intervention on the original track.
 
+### Fix issue 3
 
-## Simple example
+I do not remember what it may have happened at this point (53). Points from 49 to 53 have the same location. It is like I stopped there. Nevertheless, from point 53 to point 54 there was no intermediate recording. I prefer to replace points 50 to 53 by 4 points evenly distributed between points 49 and 54, assuming constant pace. Note that the points of the issue here refer to the track points once issue 1 and issue 2 have been fixed. In the original track, they correspond to points 65 to 70. 
 
-```{r}
-simple_line = st_linestring(matrix(c(0, 0, 1, 1), 2, 2, byrow = TRUE))
-```
+We create a function to interpolate equally spaced n points between two points in the plane as it allows full control of the number of points interpolated.
 
-```{r}
-plot(simple_line)
-```
 ```{r}
-st_crs(simple_line)
+# Take two points 
+# function that takes an sf object of two points and returns and sf object with n + 2 points with times interpolated
+# and elevation interpolated NA
+# I prefer to use this function instead of st_segmentize to control the number of points interpolated. 
+# The result should not be that different 
+interpolate <- function(x, n) {
+  time_ab <- as.numeric(diff(x$time))
+  coord_ab <- st_coordinates(x)
+  distance_ab <- dist(coord_ab)
+  diff_coord <- diff(coord_ab) / (n + 1)
+  new_points <- st_multipoint(matrix(
+    c((1:n) * diff_coord[1, 1] + coord_ab[1, 1] , (1:n) * diff_coord[1, 2] + coord_ab[1, 2]), ncol = 2))
+  sfc_new <- st_cast(st_sfc(new_points, crs = 4326), "POINT")
+  sf_new <- st_sf(data.frame(time = x$time[1] + (1:n) * time_ab / (n + 1), ele = rep(NA, n)), geometry = sfc_new)
+  sf_total <- rbind(x[1, ], sf_new, x[2, ])
+}
 ```
+
 ```{r}
-simple_sfc = st_sfc(simple_line)
+sf_two_points <- interpolate(sf_tracks_points_min_2[c(49, 54), ], 4)
+sf_tracks_points_min_3 <- rbind(sf_tracks_points_min_2[1:48, ], sf_two_points, sf_tracks_points_min_2[55:1034, ])
 ```
 
+We have now the track with the three issues corrected and we will next export the new track into a .gpx file
 
-```{r}
-st_crs(simple_sfc) = 4326
-```
+## Read 2nd track
 
-```{r}
-st_length(simple_sfc)
-```
+We read a second track
+
 ```{r}
-st_line_sample(
-  st_transform(simple_sfc, 3857), 
-  sample = c(0, 100000/as.numeric(st_length(simple_sfc))))
+file_name2 <-  "data/samsung_health/20210411_184242.gpx"
+st_layers(file_name2, )
 ```
+
+
 ```{r}
-st_cast(.Last.value, "LINESTRING")
+sf_track_points2 <- st_read(file_name2, layer = "track_points", drivers = "GPX", options = "GPX_USE_EXTENSIONS=YES")
 ```
 ```{r}
-st_transform(.Last.value, 4326)
+sf_track_points2 <- sf_track_points2 %>% 
+  select(ele, time)
 ```
+
+We repair the track from point 807 to 862 (860 better as it has elevation). First we create the right track with onthegomap.com
+
 ```{r}
-linia_100km = .Last.value
+sf_issue1_tr2 <- read_sf("data/onthego/onthegomap-issue1_track2.gpx", layer = "route_points")
+sf_issue1_tr2 <- sf_issue1_tr2 %>% 
+  select(ele, time)
 ```
 
 ```{r}
-coordenades_punt =  st_coordinates(linia_100km)[2, 1:2]
-point_100km = st_sfc(
-  st_point(coordenades_punt),
-  crs = 4326
-)
+sf_issue1_tr2_complete <- rbind(sf_track_points2[808, ], sf_issue1_tr2, sf_track_points2[860, ])
 ```
 
-
 ```{r}
-plot(simple_sfc)
-plot(linia_100km, add = TRUE, col = "red", lwd = 2)
-plot(point_100km, col = "red", pch = 16, add = TRUE, cex = 3)
+elevation_gap <- diff(sf_issue1_tr2_complete$ele[2:1])
+sf_issue1_tr2_complete$ele[2:8] <- sf_issue1_tr2_complete$ele[2:8] + elevation_gap
+sf_issue1_tr2_complete$ele
 ```
 
+We need to compute the time for each new point. we compute these times assuming a constant pace. 
 
-```{r}
-library(tmap)
-```
 ```{r}
-tm_shape(gps_track_points_sf) + tm_symbols(size = 0.1, col = "red") 
+dist_ab <- as.numeric(st_distance(sf_issue1_tr2_complete[c(1, 9), ])[1, 2])
+time_ab <- as.numeric(as.duration(diff(sf_issue1_tr2_complete$time[c(1, 9)])))
+pace_ab <- dist_ab / time_ab
 ```
 
 ```{r}
-tm_shape(gps_tracks_sf) + tm_lines(col = "orange", lwd = 2) +
-tm_shape(gps_track_points_sf) + tm_symbols(size = 0.1, col = "red") 
+sf_issue1_tr2_complete$time[2:8] <- 
+  sf_issue1_tr2_complete$time[1] + 
+    as.numeric(st_distance(sf_issue1_tr2_complete)[2:8, 1]) / pace_ab
+sf_issue1_tr2_complete$time
 ```
+
 ```{r}
-st_length(gps_tracks_sf)
+sf_track_points2_min_1 <- rbind(sf_track_points2[1:807, ], sf_issue1_tr2_complete)
 ```
 
 
-```{r}
-all_segments_distance = st_distance(gps_track_points_sf)
-```
+## Join both tracks
 
 ```{r}
-m_distances  = matrix(c(1:112, 2:113), 112, 2)
+sf_two_tracks <- rbind(sf_tracks_points_min_3, sf_track_points2_min_1)
 ```
 
+## Write .gpx file
 
 ```{r}
-distances = c(units::set_units(0, "m"), all_segments_distance[m_distances])
-sum(distances)
-```
-```{r}
-st_line_sample(gps_tracks_sf, density = units::set_units(1, 1/km))
-```
+# sf build
 
-```{r}
-st_geometry(gps_track_points_sf)[1:2]
+doc <- add_gpx(creator = "pep")
+add_trk(doc2, df[1:10, ], name = "track_1")
+add_trk(doc2, df[11:20, ], name = "track_2")
+write_xml(doc2, file = "output_doble.gpx", options = c("format", "no_empty_tags"))
 ```
 ```{r}
-class(st_geometry(gps_track_points_sf)[1:2])
+library(xml2)
 ```
 
-```{r}
-st_crs(gps_track_points_sf)
-```
+In this case, we created a couple of functions to build the gpx root node and a trk node.
 
 ```{r}
-line_new = st_linestring(st_coordinates(st_geometry(gps_track_points_sf)[1:2]))
+add_gpx <-  function(creator = "R - pep"){
+  xml_new_root("gpx",
+  version = "1.1",
+  creator = creator,
+  "xmlns:xsi"="http://www.w3.org/2001/XMLSchema-instance",
+  xmlns="http://www.topografix.com/GPX/1/1",
+  "xsi:schemaLocation"="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd",
+  "xmlns:gpxtpx"="http://www.garmin.com/xmlschemas/TrackPointExtension/v1")
+}
+
+add_trk <- function(parent, df, name = NULL) {
+  trk_node <- xml_add_child(parent, "trk")
+  n_points <- nrow(df)
+  if(!is.null(name)) xml_add_child(trk_node, "name", name)
+  # add trk, name, trkseg, trkpt
+  trkseg_node <- xml_add_child(trk_node, "trkseg")
+  for(k in 1:n_points) {xml_add_child(trkseg_node, "trkpt")}
+  trkpt_nodes <- xml_find_all(trkseg_node, ".//trkpt")
+  # create attribute lon, lat
+  xml_set_attr(trkpt_nodes, "lat", df$lat)
+  xml_set_attr(trkpt_nodes, "lon", df$lon)
+  # create nodes ele and time if they exist 
+  if("ele" %in% names(df)) xml_add_child(trkpt_nodes, "ele", df$ele)
+  if("time" %in% names(df)) xml_add_child(trkpt_nodes, "time", df$time)
+  return(invisible(parent))
+}
 ```
+
+Now, you build the complete xml tree with the two tracks nodes
 
 ```{r}
-line_new_sfc = st_sfc(line_new, crs = 4326)
+df <-st_coordinates(sf_two_tracks) %>%
+  as.data.frame() %>% 
+  rename(lat = Y, lon = X) %>% 
+  bind_cols(as.data.frame(sf_two_tracks[, c("ele", "time")]))
 ```
 
 ```{r}
-line_new_sfc
+df$ele[is.na(df$ele)] <- ""
+df$time <- strftime(df$time, "%Y-%m-%dT%H:%M:%SZ", tz = "GMT")
 ```
 
 
 ```{r}
-st_line_sample(line_new, sample = c(0, 0.25, 0.5, 0.75, 1))
+doc2 <- add_gpx()
+add_trk(doc2, as.data.frame(df), name = "turo de valldaura-font de la marquesa")
+resp <- write_xml(doc2, file = "data/samsung_health/20210411_one_track.gpx", options = c("format", "no_empty_tags"))
 ```
-```{r}
-st_line_sample(st_transform(line_new_sfc, 3857), density = units::set_units(1, 1/m))
-```
+
 
